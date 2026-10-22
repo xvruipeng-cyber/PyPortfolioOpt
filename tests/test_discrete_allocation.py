@@ -223,6 +223,55 @@ def test_greedy_portfolio_allocation_short_different_params_reinvest():
     np.testing.assert_almost_equal(long_total + short_total + leftover, 100000)
 
 
+def test_lp_portfolio_skips_ecos_bb_when_cvxpy_removed_it(monkeypatch):
+    requested = {}
+
+    def fake_solve(self, *args, **kwargs):
+        requested["solver"] = kwargs.get("solver")
+        raise SolverError("stop before a real solve")
+
+    monkeypatch.setattr(
+        "pypfopt.discrete_allocation._check_soft_dependencies",
+        lambda *args, **kwargs: True,
+    )
+    monkeypatch.setattr(
+        "pypfopt.discrete_allocation.cp.installed_solvers",
+        lambda: ["OSQP", "SCS"],
+    )
+    monkeypatch.setattr("pypfopt.discrete_allocation.cp.Problem.solve", fake_solve)
+
+    prices = pd.Series({"A": 10.0, "B": 20.0})
+    da = DiscreteAllocation({"A": 0.5, "B": 0.5}, prices, total_portfolio_value=100)
+    with pytest.raises(SolverError):
+        da.lp_portfolio()
+    assert requested["solver"] is None
+
+
+def test_lp_portfolio_still_defaults_to_ecos_bb_when_installed(monkeypatch):
+    requested = {}
+
+    def fake_solve(self, *args, **kwargs):
+        requested["solver"] = kwargs.get("solver")
+        raise SolverError("stop before a real solve")
+
+    monkeypatch.setattr(
+        "pypfopt.discrete_allocation._check_soft_dependencies",
+        lambda *args, **kwargs: True,
+    )
+    monkeypatch.setattr(
+        "pypfopt.discrete_allocation.cp.installed_solvers",
+        lambda: ["ECOS_BB", "OSQP"],
+    )
+    monkeypatch.setattr("pypfopt.discrete_allocation.cp.Problem.solve", fake_solve)
+
+    prices = pd.Series({"A": 10.0, "B": 20.0})
+    da = DiscreteAllocation({"A": 0.5, "B": 0.5}, prices, total_portfolio_value=100)
+    with pytest.warns(FutureWarning, match="ECOS_BB"):
+        with pytest.raises(SolverError):
+            da.lp_portfolio()
+    assert requested["solver"] == "ECOS_BB"
+
+
 def test_lp_portfolio_allocation():
     ef = setup_efficient_frontier()
     w = ef.max_sharpe(risk_free_rate=0.02)
