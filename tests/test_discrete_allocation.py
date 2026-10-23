@@ -1,3 +1,4 @@
+import cvxpy as cp
 from cvxpy.error import SolverError
 import numpy as np
 import pandas as pd
@@ -270,6 +271,22 @@ def test_lp_portfolio_still_defaults_to_ecos_bb_when_installed(monkeypatch):
         with pytest.raises(SolverError):
             da.lp_portfolio()
     assert requested["solver"] == "ECOS_BB"
+
+
+@pytest.mark.skipif(
+    "ECOS_BB" in cp.installed_solvers(),
+    reason="ECOS_BB is registered, so the missing-solver path is not active",
+)
+def test_lp_portfolio_solves_when_ecos_bb_is_absent():
+    """cvxpy 1.6 dropped ECOS. A two-asset allocation must still solve."""
+    prices = pd.Series({"A": 10.0, "B": 20.0})
+    da = DiscreteAllocation({"A": 0.5, "B": 0.5}, prices, total_portfolio_value=1000)
+
+    allocation, leftover = da.lp_portfolio()
+
+    assert allocation["A"] * 10 + allocation["B"] * 20 + leftover == pytest.approx(1000)
+    assert allocation["A"] > 0
+    assert allocation["B"] > 0
 
 
 def test_lp_portfolio_allocation():
