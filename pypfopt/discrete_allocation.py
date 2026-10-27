@@ -306,8 +306,8 @@ class DiscreteAllocation:
             of funds leftover.
         """
         # todo 1.7.0: remove this defaulting behavior
-        # cvxpy 1.6 dropped ECOS_BB. The ecos package can still be installed,
-        # but selecting a solver cvxpy no longer registers fails the allocation.
+        # The ecos distribution can be present while cvxpy does not register
+        # ECOS_BB. Selecting that missing solver raises SolverError.
         if (
             solver is None
             and _check_soft_dependencies("ecos", severity="none")

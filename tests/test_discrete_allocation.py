@@ -273,17 +273,44 @@ def test_lp_portfolio_still_defaults_to_ecos_bb_when_installed(monkeypatch):
     assert requested["solver"] == "ECOS_BB"
 
 
-@pytest.mark.skipif(
-    "ECOS_BB" in cp.installed_solvers(),
-    reason="ECOS_BB is registered, so the missing-solver path is not active",
-)
-def test_lp_portfolio_solves_when_ecos_bb_is_absent():
-    """cvxpy 1.6 dropped ECOS. A two-asset allocation must still solve."""
+def test_lp_portfolio_solves_when_ecos_imports_but_ecos_bb_is_unregistered(
+    monkeypatch,
+):
+    """Solve when the ecos check passes but cvxpy does not list ECOS_BB.
+
+    ``installed_solvers`` is patched to drop ECOS_BB and the ecos
+    soft-dependency check is forced true. main still requests ECOS_BB,
+    so this fails there. Here the solver stays unset and a two-asset
+    allocation solves.
+    """
+    requested = {}
+    real_solve = cp.Problem.solve
+    real_installed_solvers = cp.installed_solvers
+
+    def solve_and_record(self, *args, **kwargs):
+        requested["solver"] = kwargs.get("solver")
+        return real_solve(self, *args, **kwargs)
+
+    def installed_solvers_without_ecos_bb():
+        return [name for name in real_installed_solvers() if name != "ECOS_BB"]
+
+    monkeypatch.setattr(
+        "pypfopt.discrete_allocation._check_soft_dependencies",
+        lambda *args, **kwargs: True,
+    )
+    monkeypatch.setattr(
+        "pypfopt.discrete_allocation.cp.installed_solvers",
+        installed_solvers_without_ecos_bb,
+    )
+    monkeypatch.setattr(
+        "pypfopt.discrete_allocation.cp.Problem.solve", solve_and_record
+    )
+
     prices = pd.Series({"A": 10.0, "B": 20.0})
     da = DiscreteAllocation({"A": 0.5, "B": 0.5}, prices, total_portfolio_value=1000)
-
     allocation, leftover = da.lp_portfolio()
 
+    assert requested["solver"] is None
     assert allocation["A"] * 10 + allocation["B"] * 20 + leftover == pytest.approx(1000)
     assert allocation["A"] > 0
     assert allocation["B"] > 0
